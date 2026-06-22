@@ -8,48 +8,32 @@
 
 ```mermaid
 flowchart LR
-  subgraph in[消息进入]
+  subgraph all[群消息处理总流程]
+    direction LR
+
     wecom[企微群消息回调]
     feishu[飞书群消息回调]
     filter[先判断要不要收]
     clean[整理成统一消息格式]
     msgLog[保存统一格式群消息]
     filterLog[记录忽略原因]
-
-    wecom --> filter
-    feishu --> filter
-    filter -->|要收| clean
-    filter -->|不要收| filterLog
-    clean --> msgLog
-  end
-
-  subgraph caseFlow[Case 自动归档线]
     route[判断消息用途]
+
     caseQueue[进入自动处理队列<br/>页面叫待批处理/待处理消息]
     batch[后台定时扫描处理<br/>页面按钮可手动加速]
     groupByAi[大模型判断<br/>新建/追加/忽略/需人工看]
     archiveCase[写入案例库]
     caseStore[案例索引、详情、聊天记录]
     caseNotify[首次新建 Case 成功后<br/>发送归档通知到原群]
+    ignoreMsg[标记忽略]
+    needHuman[标记需要人工看]
 
-    route --> caseQueue --> batch --> groupByAi
-    groupByAi -->|新建或追加| archiveCase --> caseStore
-    archiveCase --> caseNotify
-    groupByAi -->|没价值| ignoreMsg[标记忽略]
-    groupByAi -->|拿不准| needHuman[标记需要人工看]
-  end
-
-  subgraph botFlow[机器人回复线]
     botQueue[进入机器人任务池]
     worker[机器人任务处理器]
     context[拉上下文<br/>群消息/案例/知识]
     answer[生成回复]
     sendBack[发回企微/飞书群]
 
-    botQueue --> worker --> context --> answer --> sendBack
-  end
-
-  subgraph knowledgeFlow[知识沉淀线]
     knowledgeQueue[登记：以后可能要不要变成知识]
     waitStable[先等一会儿<br/>避免只看半截聊天]
     harvestScan[知识沉淀扫描器定时查看]
@@ -58,17 +42,85 @@ flowchart LR
     harvestCandidate[生成知识候选]
     reviewPage[进入知识审核页]
     ragflow[审核通过后导入 RAGFlow]
+    harvestIgnore[标记忽略，不进入审核]
 
-    knowledgeQueue --> waitStable --> harvestScan --> harvestContext --> harvestJudge
+    wecom --> filter
+    feishu --> filter
+    filter -->|要收| clean --> msgLog --> route
+    filter -->|不要收| filterLog
+
+    route -->|所有有效消息| caseQueue --> batch --> groupByAi
+    groupByAi -->|新建或追加| archiveCase --> caseStore
+    archiveCase --> caseNotify
+    groupByAi -->|没价值| ignoreMsg
+    groupByAi -->|拿不准| needHuman
+
+    route -->|命中机器人通道| botQueue --> worker --> context --> answer --> sendBack
+
+    msgLog --> knowledgeQueue --> waitStable --> harvestScan --> harvestContext --> harvestJudge
     harvestJudge -->|有复用价值| harvestCandidate --> reviewPage --> ragflow
-    harvestJudge -->|没有复用价值| harvestIgnore[标记忽略，不进入审核]
+    harvestJudge -->|没有复用价值| harvestIgnore
   end
 
-  msgLog --> route
-  msgLog --> knowledgeQueue
-  route -->|所有有效消息| caseQueue
-  route -->|命中机器人通道| botQueue
+  classDef intake fill:#eef6ff,stroke:#8bb7e0,color:#102a43;
+  classDef caseLine fill:#fff7e6,stroke:#d9a441,color:#3d2b00;
+  classDef botLine fill:#eefaf1,stroke:#67b77a,color:#12351d;
+  classDef knowledgeLine fill:#f4f0ff,stroke:#9b7de3,color:#241044;
+  classDef muted fill:#f5f5f5,stroke:#c9c9c9,color:#333;
+
+  class wecom,feishu,filter,clean,msgLog intake;
+  class caseQueue,batch,groupByAi,archiveCase,caseStore,caseNotify caseLine;
+  class botQueue,worker,context,answer,sendBack botLine;
+  class knowledgeQueue,waitStable,harvestScan,harvestContext,harvestJudge,harvestCandidate,reviewPage,ragflow knowledgeLine;
+  class filterLog,ignoreMsg,needHuman,harvestIgnore muted;
+
+  click filter "#node-filter" "查看：什么样的消息要收"
+  click clean "#node-clean" "查看：统一消息格式是什么"
+  click caseQueue "#node-case-queue" "查看：自动处理队列"
+  click knowledgeQueue "#node-knowledge-queue" "查看：知识沉淀登记"
+  click botQueue "#node-bot-queue" "查看：机器人唤醒机制"
 ```
+
+支持 Mermaid 点击跳转的平台里，可以点图中的关键节点看说明；如果平台不支持，直接看下面这几段。
+
+<a id="node-filter"></a>
+**什么样的消息要收**
+
+- 来源要在支持范围内：企微或飞书回调。
+- 消息不能是机器人自己发的。
+- 群要通过白名单限制；如果没配置白名单，就是放行所有群。
+- 消息类型要支持，例如文本、图片、语音、文件等；不支持的类型会被记录为忽略。
+
+<a id="node-clean"></a>
+**整理成统一消息格式是什么意思**
+
+- 企微和飞书原始字段不一样，系统会整理成统一字段。
+- 常见字段包括：群 ID、群名、发送人、发送时间、消息类型、正文、引用内容、标题、描述、附件/媒体信息、at 列表。
+- 后面的 Case 归档、机器人回复、消息搜索、知识沉淀都基于这份统一消息。
+
+<a id="node-case-queue"></a>
+**自动处理队列干什么**
+
+- 这是 Case 归档线的入口。
+- 后台会定时扫描，不需要人工逐条处理。
+- 大模型会按一批消息判断：新建 Case、追加已有 Case、忽略，还是少数情况需要人工看。
+- 首次新建 Case 成功后，如果推送开关开启，会自动把归档通知发回原群。
+
+<a id="node-knowledge-queue"></a>
+**知识沉淀登记干什么**
+
+- 这里只是先登记，不代表已经是知识候选，更不是入库。
+- 后台会等聊天稳定后，再拿目标消息、附近上下文、已有知识检索结果一起判断。
+- 有明确处理办法、规则、步骤、排查路径，才会生成知识候选。
+- 生成候选后还要进入知识审核页，人工通过后才导入 RAGFlow。
+
+<a id="node-bot-queue"></a>
+**机器人通道怎么触发**
+
+- 机器人通道开关 `FLOWBOT_AGENT_LANE_ENABLED` 默认开启。
+- 唤醒名来自 `FLOWBOT_AGENT_WAKE_NAMES`，默认是 `小智`。
+- 正文、引用、标题、描述里包含唤醒名，或者消息明确 @ 机器人，就会生成机器人任务。
+- 这不会替代 Case 归档；命中机器人时只是额外走一条机器人回复线。
 
 这条链路可以按“收、筛、分、办、记”来理解：
 
