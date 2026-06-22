@@ -163,7 +163,7 @@ flowchart TD
 
   groupCandidate --> reviewList[知识候选列表]
   docCandidate --> reviewList
-  reviewList --> edit[人工修改标题、适用范围、最终回答]
+  reviewList --> edit[确认或修改最终入库内容]
   edit --> decision{页面操作}
 
   decision -->|入 RAGFlow| importRagflow[整理成 Markdown 并导入 RAGFlow]
@@ -193,7 +193,6 @@ flowchart TD
 
 - 来源类型：群消息候选
 - 来源文档：售后问题群
-- 可见性：public_reply
 - 类型：group_message
 - 适用范围：商家后台登录问题
 - 置信度：0.86
