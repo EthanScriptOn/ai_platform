@@ -1,6 +1,22 @@
 # 群机器人后台 + 知识治理与问答数据处理流程
 
-## 1. 群消息进来以后发生什么
+## 1. 常见名词翻译
+
+| 文档里看到的词 | 通俗理解 |
+| --- | --- |
+| RAGFlow | 正式知识库和问答系统 |
+| 群机器人后台 | 看群消息处理情况的总控台 |
+| 知识候选 | 模型觉得“可能值得入库”的知识草稿 |
+| 入 RAGFlow | 人确认这条知识可以长期复用，并同步到 RAGFlow |
+| 不入库 | 人确认这条不适合进知识库 |
+| 案例 / Case | 一次客户问题或群内问题的处理记录 |
+| 机器人任务 | 群里有人唤醒机器人后生成的待回复任务 |
+| 消息池 | 还没处理完、等待批处理的消息集合 |
+| 知识沉淀 | 从聊天或文档里提炼可复用知识 |
+| 标准化消息 | 把企微、飞书不同格式的消息整理成统一格式 |
+| 回写状态 | 处理完以后，把“已入库/不入库/失败”等结果记回去 |
+
+## 2. 群消息进来以后发生什么
 
 ```mermaid
 flowchart LR
@@ -36,8 +52,8 @@ flowchart LR
     harvestContext[取目标消息、附近上下文<br/>和已有知识检索结果]
     harvestJudge[大模型判断]
     harvestCandidate[生成知识候选]
-    reviewPage[进入知识审核页]
-    ragflow[审核通过后导入 RAGFlow]
+    reviewPage[进入知识候选]
+    ragflow[点入 RAGFlow 后同步]
     harvestIgnore[标记忽略，不进入审核]
 
     wecom --> filter
@@ -72,58 +88,59 @@ flowchart LR
 
 ```
 
-## 2. 群机器人后台页面展示的数据从哪来
+## 3. RAGFlow 检索是怎么跑的
 
 ```mermaid
-flowchart LR
-  page[群机器人后台页面] --> dataApi[请求后台数据 /flowbot/dashboard/data]
-  dataApi --> build[汇总各类运行记录]
+flowchart TD
+  group[群里有人提问或唤醒机器人]
+  task[进入机器人任务池]
+  worker[机器人任务处理器]
+  firstContext[先拿一次任务基本信息<br/>当前消息、群、发送人、唤醒原因]
+  llmJudge{LLM 判断<br/>信息够不够}
 
-  build --> msgLogs[消息进入、过滤、整理、分流记录]
-  build --> workState[待处理池、机器人任务、知识沉淀状态]
-  build --> knowledgeLogs[知识候选、发布、拒绝记录]
-  build --> caseData[案例索引和案例详情]
-  build --> db[可选数据库存储]
+  recent[查最近群消息]
+  anchor[查某条消息前后文]
+  oldTopic[按关键词搜旧消息]
+  memory[搜消息记忆和 Case]
+  knowledge[搜知识库]
+  ragAuth[需要 RAGFlow 时<br/>后台登录拿令牌]
+  ragDataset[确定要查哪些知识库]
+  ragSearch[调用 RAGFlow 检索接口<br/>datasets/search]
+  chunks[拿回相关知识片段]
+  merge[把补到的消息、Case、知识<br/>重新交给 LLM]
 
-  msgLogs --> summary[按群、时间、状态汇总]
-  workState --> summary
-  knowledgeLogs --> summary
-  caseData --> summary
-  db --> summary
+  notEnough{还是不够吗}
+  limit[到工具调用上限<br/>不再继续查]
+  clarify[追问一个最关键问题<br/>或列候选让用户选]
+  answer[生成回复]
+  check[二次质检]
+  send[发回企微/飞书群]
 
-  summary --> screen[页面上的指标、列表、待处理提醒]
-```
+  group --> task --> worker --> firstContext --> llmJudge
+  llmJudge -->|够了| answer
+  llmJudge -->|不够| recent --> merge
+  llmJudge -->|需要看当前消息附近| anchor --> merge
+  llmJudge -->|用户说前面/刚才/之前| oldTopic --> anchor
+  llmJudge -->|要找历史经验| memory --> merge
+  llmJudge -->|要查知识| knowledge --> ragAuth --> ragDataset --> ragSearch --> chunks --> merge
+  merge --> notEnough
+  notEnough -->|还缺关键事实| llmJudge
+  notEnough -->|够了| answer
+  notEnough -->|到上限还不够| limit --> clarify
+  clarify --> send
+  answer --> check --> send
 
-## 3. 知识问答是怎么跑的
+  classDef userLine fill:#eef6ff,stroke:#8bb7e0,color:#102a43;
+  classDef botLine fill:#eefaf1,stroke:#67b77a,color:#12351d;
+  classDef ragLine fill:#f4f0ff,stroke:#9b7de3,color:#241044;
+  classDef resultLine fill:#fff7e6,stroke:#d9a441,color:#3d2b00;
+  classDef decisionLine fill:#fff0f6,stroke:#d66a9f,color:#421326;
 
-```mermaid
-sequenceDiagram
-  participant U as 用户
-  participant P as 知识治理与问答页面
-  participant C as 问答小页面
-  participant A as 平台后端
-  participant R as RAGFlow知识库
-
-  U->>P: 打开“知识治理与问答”
-  P->>C: 显示问答区域
-  C->>A: 请求登录态
-  A->>R: 登录 RAGFlow 或使用共享授权
-  R-->>A: 返回可用登录信息
-  A-->>C: 问答页准备完成
-
-  C->>A: 获取当前问答应用信息
-  A->>R: 查询问答应用和知识库
-  R-->>A: 返回名称、知识库等信息
-
-  U->>C: 输入问题
-  C->>A: 创建本次问答会话
-  A->>R: 在 RAGFlow 创建会话
-  R-->>A: 返回会话编号
-  C->>A: 提交问题
-  A->>R: 转发问题
-  R-->>A: 持续返回答案片段
-  A-->>C: 原样转回答案片段
-  C-->>U: 页面逐步显示答案
+  class group,send userLine;
+  class task,worker,firstContext,recent,anchor,oldTopic,memory,knowledge,merge botLine;
+  class ragAuth,ragDataset,ragSearch,chunks ragLine;
+  class answer,check,clarify,limit resultLine;
+  class llmJudge,notEnough decisionLine;
 ```
 
 ## 4. 知识候选从哪来
@@ -139,116 +156,278 @@ flowchart TD
   end
 
   subgraph docSource[来源二：上传文档治理]
-    upload[审核页上传文档] --> readText[提取文档文字]
+    upload[知识候选里上传文档] --> readText[提取文档文字]
     readText --> splitByAi[大模型拆成知识条目]
     splitByAi --> docCandidate[生成文档知识候选]
   end
 
-  groupCandidate --> reviewList[审核页候选列表]
+  groupCandidate --> reviewList[知识候选列表]
   docCandidate --> reviewList
   reviewList --> edit[人工修改标题、适用范围、最终回答]
-  edit --> decision{审核决定}
+  edit --> decision{页面操作}
 
-  decision -->|通过| importRagflow[整理成 Markdown 并导入 RAGFlow]
-  decision -->|保存草稿| saveDraft[保存修改，稍后再看]
-  decision -->|拒绝| reject[标记不入库]
+  decision -->|入 RAGFlow| importRagflow[整理成 Markdown 并导入 RAGFlow]
+  decision -->|不入库| reject[标记不入库]
 
   importRagflow --> qa[后续问答和机器人可检索]
+
+  classDef sourceLine fill:#eef6ff,stroke:#8bb7e0,color:#102a43;
+  classDef aiLine fill:#fff7e6,stroke:#d9a441,color:#3d2b00;
+  classDef reviewLine fill:#f4f0ff,stroke:#9b7de3,color:#241044;
+  classDef resultLine fill:#eefaf1,stroke:#67b77a,color:#12351d;
+  classDef muted fill:#f5f5f5,stroke:#c9c9c9,color:#333;
+
+  class msg,upload,readText sourceLine;
+  class waitJudge,judgeOld,judgeAi,splitByAi aiLine;
+  class groupCandidate,docCandidate,reviewList,edit,decision reviewLine;
+  class importRagflow,qa resultLine;
+  class groupIgnore,reject muted;
 ```
 
-## 5. 审核通过后怎么入库
+点「入 RAGFlow」后，真正喂进 RAGFlow 的不是原始聊天记录，也不是整篇文档原文，而是整理后的 Markdown。大概长这样：
 
-```mermaid
-flowchart TD
-  review[人工审核页] --> source{候选来源}
+```markdown
+# 悦拜知识库
 
-  source -->|文档候选| saveDecision[保存审核决定]
-  saveDecision --> collectApproved[收集所有已通过文档知识]
-  collectApproved --> mdDoc[生成 approved_knowledge.md]
-  mdDoc --> uploadDoc[上传到 RAGFlow]
-  uploadDoc --> parseDoc[触发 RAGFlow 切分入库]
+## 后台登录失败如何处理
 
-  source -->|群消息候选| singleEntry[把单条候选整理成入库文本]
-  singleEntry --> mdGroup[生成 flowbot-候选编号.md]
-  mdGroup --> uploadGroup[上传到 RAGFlow]
-  uploadGroup --> markPublished[回写群消息候选为已发布]
+- 来源类型：群消息候选
+- 来源文档：售后问题群
+- 可见性：public_reply
+- 类型：group_message
+- 适用范围：商家后台登录问题
+- 置信度：0.86
+- 来源链接：
+- 来源路径：trace-20260622-001
 
-  parseDoc --> ragflow[RAGFlow知识库]
-  markPublished --> ragflow
+用户可能问：
+- 客户进不去后台怎么办？
+- 登录提示账号异常怎么处理？
+
+最终入库内容：
+如果客户反馈进不去后台，先确认账号是否被锁定、密码是否连续输错、当前登录入口是否正确。
+如果是账号锁定，先让客户等待锁定时间结束；如仍无法登录，再收集账号、店铺名、报错截图交给技术排查。
+
+原文证据：
+- 客服：客户说后台一直登录失败，提示账号异常。
+- 技术：这个账号连续输错密码被临时锁定，30 分钟后再试。
+
+标签：
+- 登录
+- 后台
+- 账号锁定
 ```
 
-## 6. 群机器人和知识库怎么形成闭环
+这里最重要的是“最终入库内容”。后面机器人和 RAGFlow 检索时，主要就是靠这段整理后的答案来匹配和回复；“原文证据”是为了让人能追溯这条知识从哪里来。
 
-```mermaid
-flowchart TD
-  group[群聊消息] --> record[记录和整理]
-  record --> cases[沉淀成案例]
-  record --> botTask[触发机器人任务]
-  record --> knowledgeDraft[提炼成知识候选]
+## 5. RAGFlow 是什么
 
-  knowledgeDraft --> human[人工审核]
-  human --> ragflow[进入RAGFlow知识库]
+RAGFlow 可以理解成“正式知识库 + 问答引擎”。它解决的是：公司自己的文档、群聊经验、处理规则，大模型本来不知道；RAGFlow 先把这些资料存成可检索的知识，提问时先找资料，再让大模型基于资料回答。
 
-  botTask --> context[机器人拉上下文]
-  context --> cases
-  context --> ragflow
-  context --> answer[生成更靠谱的回复]
-  answer --> group
+### 市面上常见的知识库工具
 
-  ragflow --> qa[知识问答页面]
-```
+| 工具 | 更像什么 | 适合什么场景 |
+| --- | --- | --- |
+| Dify | AI 应用搭建平台 | 想快速搭应用、工作流、智能体、RAG 都放在一个平台里 |
+| FastGPT | 知识库问答 + 可视化编排 | 想快速做知识库问答，也想拖拽编排流程 |
+| MaxKB | 轻量知识库问答系统 | 想更简单地搭内部知识库、客服问答 |
+| AnythingLLM | 本地知识库聊天工具 | 个人或小团队想快速本地跑起来 |
+| LangChain / LlamaIndex | 开发框架 | 技术团队想完全自己写检索、切片、向量库、问答逻辑 |
+| RAGFlow | 文档理解能力更重的 RAG 引擎 | 文档格式复杂、想重点做好解析、切片、检索和引用 |
 
-## 7. 常见名词翻译
+我们选择 RAGFlow，主要不是因为它“能聊天”，而是因为它更贴近我们这里的需求：
 
-| 文档里看到的词 | 通俗理解 |
+- 我们已经有自己的业务页面、群机器人、人工审核流程，不需要再用一个大平台重做应用编排。
+- 我们真正缺的是一个稳定的“正式知识库底座”，负责接收 Markdown、切片、建索引、检索。
+- 我们有飞书文档、群消息沉淀、人工整理后的 Markdown，后面还可能有更多复杂文档，RAGFlow 对文档解析和 RAG 检索这块更专注。
+- 我们的机器人是在代码内部调用 RAGFlow 检索，不是把业务流程都搬到 RAGFlow 里做。
+
+### 检索为什么能找出来
+
+RAGFlow 不是只靠“拆词”。它更像“搜索引擎 + 向量检索 + 大模型回答”。RAGFlow 默认用 Elasticsearch 存全文和向量，也可以切到 Infinity。
+
+| 检索方式 | 适合解决什么 |
 | --- | --- |
-| RAGFlow | 正式知识库和问答系统 |
-| 群机器人后台 | 看群消息处理情况的总控台 |
-| 知识候选 | 模型觉得“可能值得入库”的知识草稿 |
-| 审核通过 | 人确认这条知识可以长期复用 |
-| 拒绝 | 人确认这条不适合入库 |
-| 案例 / Case | 一次客户问题或群内问题的处理记录 |
-| 机器人任务 | 群里有人唤醒机器人后生成的待回复任务 |
-| 消息池 | 还没处理完、等待批处理的消息集合 |
-| 知识沉淀 | 从聊天或文档里提炼可复用知识 |
-| 标准化消息 | 把企微、飞书不同格式的消息整理成统一格式 |
-| 回写状态 | 处理完以后，把“已发布/已拒绝/失败”等结果记回去 |
+| 关键词检索 | 产品名、错误码、接口名、固定术语等字面对得上的内容 |
+| 向量检索 | “说法不同，但意思接近”的内容 |
 
-## 8. 数据大概存在哪里
+关键词检索类似倒排索引：
 
-| 数据 | 大概位置 |
+| 词 | 出现在哪些片段里 |
 | --- | --- |
-| 群消息进入、过滤、整理、分流日志 | 群机器人服务的数据目录，或数据库 |
-| 待处理消息、机器人任务、知识沉淀状态 | 群机器人服务的运行状态文件，或数据库 |
-| 案例索引和案例详情 | `DATA_DIR/index.json`, `DATA_DIR/thread_index.json` 以及案例详情文件 |
-| 群消息知识候选 | `KNOWLEDGE_CANDIDATES_PATH` |
-| 群消息知识发布/拒绝记录 | `KNOWLEDGE_PUBLISH_LOG_PATH` |
-| 文档治理出来的候选 | `data/knowledge-governance/review-runs/current/governed_units.jsonl` |
-| 文档审核决定 | `REVIEW_STATE_PATH` |
-| 导入 RAGFlow 前生成的 Markdown | `data/knowledge-governance/review-runs/current/approved_ragflow_markdown/*.md` |
-| RAGFlow 导入结果记录 | `data/knowledge-governance/review-runs/current/ragflow_import_state.json` |
+| 登录失败 | 片段 1、片段 7 |
+| 账号锁定 | 片段 7、片段 12 |
+| 解锁 | 片段 7、片段 18 |
 
-## 9. 部署流程
+这样问“登录失败是不是账号锁了”，系统很快能找到片段 7。
 
-```mermaid
-flowchart LR
-  server[登录服务器] --> code[进入后端仓库]
-  code --> deploy[执行部署脚本]
-  deploy --> done[脚本自动构建、发布、重启]
-  done --> check[打开页面确认正常]
+但用户可能问“客户进不去后台”，文档写的是“登录失败”。这时光靠关键词不够，就要用向量检索。
+
+### 向量是什么
+
+向量就是一串数字。向量化模型会把一句话变成数字，让机器能比较“意思像不像”。
+
+```text
+登录失败怎么办      -> [0.12, 0.88, 0.41, ...]
+客户进不去后台      -> [0.14, 0.86, 0.39, ...]
+怎么设置优惠券      -> [0.73, 0.21, 0.66, ...]
 ```
 
-日常部署就两行：
+前两句意思接近，所以向量距离更近；第三句是另一个话题，距离更远。
+
+这里分工是：
+
+| 角色 | 做什么 |
+| --- | --- |
+| 向量化模型 | 把文字变成向量 |
+| 检索引擎 | 保存向量，计算哪个片段更接近问题 |
+| 回答大模型 | 拿到片段后，组织成自然语言回答 |
+
+向量化模型不是人工写规则，它是训练出来的。训练时会让相似句子的向量更近，不相关句子的向量更远。比如“登录失败怎么办”和“客户进不去后台”被拉近，“登录失败怎么办”和“怎么设置优惠券”被拉远。
+
+容易误会的点：
+
+| 误会 | 实际情况 |
+| --- | --- |
+| 上传文档就一定答得好 | 还要看文档质量、切片效果、问题是否清楚 |
+| RAGFlow 自动知道所有公司事情 | 只有导进去的资料，它才方便检索 |
+| 群消息会直接进知识库 | 不会，先生成候选，点「入 RAGFlow」后才入库 |
+| 知识库能替代 Case | 不能。Case 是一次处理记录，知识库是可复用经验 |
+
+### 用 Ollama 本地跑向量模型
+
+如果不想用云厂商的向量模型，也可以把开源向量模型下载到本机，用 Ollama 跑起来，再让 RAGFlow 调它。
+
+本机先下载模型：
+
+```bash
+ollama pull qwen3-embedding:0.6b
+```
+
+测试模型能不能把文字变成向量：
+
+```bash
+curl http://127.0.0.1:11434/api/embed \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen3-embedding:0.6b",
+    "input": [
+      "后台登录失败怎么办",
+      "客户进不去后台怎么处理",
+      "怎么设置优惠券"
+    ]
+  }'
+```
+
+在 RAGFlow 里添加模型：
+
+```text
+模型提供商
+  ↓
+Ollama
+  ↓
+Base URL：http://127.0.0.1:11434
+  ↓
+API-Key：dummy
+  ↓
+添加模型：qwen3-embedding:0.6b
+  ↓
+模型类型：Embedding
+  ↓
+最大 token 数：8192
+```
+
+然后新建一个测试知识库，在知识库配置里把 `Embedding` 选成 `qwen3-embedding:0.6b`，再上传 Markdown 测试。
+
+注意：如果 RAGFlow 在服务器上，`127.0.0.1` 指的是服务器自己，不是你的电脑。这种情况下要么把 Ollama 也装到服务器，要么把本机 Ollama 暴露成服务器能访问的地址。
+
+参考资料：
+
+- [RAGFlow 官方 Quickstart](https://ragflow.io/docs/)
+- [RAGFlow GitHub README](https://github.com/infiniflow/ragflow)
+- [MTEB 向量模型排行榜](https://huggingface.co/spaces/mteb/leaderboard)
+
+## 6. 部署流程
+
+平台部署：
 
 ```bash
 cd /path/to/yuebai-ai-tool-platform-server
 bash scripts/deploy-linux.sh
 ```
 
-部署完打开后台页面看一下能不能正常访问；如果页面打不开，再看日志：
+检查平台服务：
+
+```bash
+curl http://127.0.0.1:8788/api/health
+curl "http://127.0.0.1:3010/flowbot/dashboard/data?limit=1"
+```
+
+看日志：
 
 ```bash
 sudo journalctl -u yuebai-ai-platform.service -f
 sudo journalctl -u wecom-flowbot.service -f
 sudo journalctl -u wecom-flowbot-agent-worker.service -f
+```
+
+MySQL 安装：
+
+```bash
+sudo apt update
+sudo apt install -y mysql-server
+sudo systemctl enable --now mysql
+
+sudo mysql -e "CREATE DATABASE IF NOT EXISTS flowbot_runtime DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
+sudo mysql -e "CREATE USER IF NOT EXISTS 'flowbot_app'@'%' IDENTIFIED BY '请改成强密码';"
+sudo mysql -e "GRANT ALL PRIVILEGES ON flowbot_runtime.* TO 'flowbot_app'@'%'; FLUSH PRIVILEGES;"
+```
+
+平台连接 MySQL：
+
+打开「群机器人后台」里的「设置 / 运行配置」，在「数据存储」里填：
+
+- 存储方式：`mysql`
+- MySQL 地址：`127.0.0.1`
+- MySQL 端口：`3306`
+- 数据库名：`flowbot_runtime`
+- 用户名：`flowbot_app`
+- 密码：上面创建用户时填的密码
+- 自动建表：打开
+
+保存后重启群机器人服务：
+
+```bash
+sudo systemctl restart wecom-flowbot.service
+sudo systemctl restart wecom-flowbot-agent-worker.service
+```
+
+RAGFlow 安装：
+
+```bash
+sudo sysctl -w vm.max_map_count=262144
+echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+
+cd /opt
+git clone https://github.com/infiniflow/ragflow.git
+cd /opt/ragflow/docker
+docker compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml ps
+docker compose -f docker-compose.yml logs -f
+```
+
+平台连接 RAGFlow：
+
+打开「知识治理与问答」，点「RAGFlow 设置」，填：
+
+- RAGFlow 服务地址：`http://127.0.0.1:8080`
+- 问答入口：`http://127.0.0.1:8080/yuebai-workbench/`
+- 问答应用 ID：RAGFlow 里的聊天应用 ID
+- 知识库数据集 ID：RAGFlow 里的数据集 ID
+- API Token：RAGFlow 里生成的 API token
+
+保存后重启平台服务：
+
+```bash
+sudo systemctl restart yuebai-ai-platform.service
 ```
