@@ -166,7 +166,10 @@ flowchart TD
   reviewList --> edit[确认或修改最终入库内容]
   edit --> decision{页面操作}
 
-  decision -->|入 RAGFlow| importRagflow[整理成 Markdown 并导入 RAGFlow]
+  decision -->|入库| importRagflow[整理成 Markdown 并导入 RAGFlow]
+  decision -->|查看关联文档| relatedDocs[看 RAGFlow 命中的旧文档]
+  relatedDocs --> rewrite[智能改写<br/>定位原句和建议合并内容]
+  rewrite --> importRagflow
   decision -->|不入库| reject[标记不入库]
 
   importRagflow --> qa[后续问答和机器人可检索]
@@ -179,45 +182,127 @@ flowchart TD
 
   class msg,upload,readText sourceLine;
   class waitJudge,judgeOld,judgeAi,splitByAi aiLine;
-  class groupCandidate,docCandidate,reviewList,edit,decision reviewLine;
+  class groupCandidate,docCandidate,reviewList,edit,decision,relatedDocs,rewrite reviewLine;
   class importRagflow,qa resultLine;
   class groupIgnore,reject muted;
 ```
 
-点「入 RAGFlow」后，真正喂进 RAGFlow 的不是原始聊天记录，也不是整篇文档原文，而是整理后的 Markdown。大概长这样：
+点「入 RAGFlow」后，真正喂进 RAGFlow 的不是原始聊天记录，也不是整篇文档原文，而是整理后的 Markdown。
+
+这里有个坑：RAGFlow 会把 Markdown 里的文字都当成可检索内容。像「最终入库内容：」「原文证据：」「置信度：」「可见性：」这种审核字段，如果也写进 Markdown，就可能被检索出来，最后出现在机器人回复里。
+
+所以入库 Markdown 应该少放“治理字段”，多放“业务问题和答案”。推荐长这样：
 
 ```markdown
-# 悦拜知识库
+# 后台登录失败如何处理
 
-## 后台登录失败如何处理
-
-- 来源类型：群消息候选
-- 来源文档：售后问题群
-- 类型：group_message
-- 适用范围：商家后台登录问题
-- 置信度：0.86
-- 来源链接：
-- 来源路径：trace-20260622-001
-
-用户可能问：
+## 常见问法
 - 客户进不去后台怎么办？
 - 登录提示账号异常怎么处理？
+- 后台账号被锁定了怎么处理？
 
-最终入库内容：
+## 答案
 如果客户反馈进不去后台，先确认账号是否被锁定、密码是否连续输错、当前登录入口是否正确。
+
 如果是账号锁定，先让客户等待锁定时间结束；如仍无法登录，再收集账号、店铺名、报错截图交给技术排查。
 
-原文证据：
-- 客服：客户说后台一直登录失败，提示账号异常。
-- 技术：这个账号连续输错密码被临时锁定，30 分钟后再试。
-
-标签：
-- 登录
-- 后台
-- 账号锁定
+## 关键词
+登录、后台、账号锁定、登录失败、账号异常
 ```
 
-这里最重要的是“最终入库内容”。后面机器人和 RAGFlow 检索时，主要就是靠这段整理后的答案来匹配和回复；“原文证据”是为了让人能追溯这条知识从哪里来。
+这里不是说「常见问法」「答案」这些标题完全不会被搜到。它们也在 Markdown 里，也可能进入切片。只是它们是业务结构标题，污染很小，还能帮助切片更清楚。真正不该进 RAGFlow 正文的是审核过程里的字段，比如「最终入库内容」「原文证据」「审核备注」。
+
+简单记：
+
+| 内容 | 要不要进 RAGFlow 正文 | 原因 |
+| --- | --- | --- |
+| 业务标题 | 要 | 帮助检索知道这段讲什么 |
+| 用户可能怎么问 | 要 | 用户真实提问更容易命中 |
+| 标准答案 | 要 | 机器人最终主要引用这部分 |
+| 关键词/别名 | 要 | 产品名、错误码、俗称更容易搜到 |
+| 原文证据 | 不建议 | 容易把原始聊天、半截话、审核痕迹带进回复 |
+| 置信度、可见性、审核备注 | 不要 | 这是给人审核用的，不是给用户回答用的 |
+
+证据不是不要，而是应该留在系统记录里，方便人追溯；不要把它当答案正文喂给 RAGFlow。
+
+### 已有知识、误召回和智能改写
+
+知识候选页现在有三个核心动作：
+
+| 按钮 | 什么时候点 | 结果 |
+| --- | --- | --- |
+| 入库 | 确认这是新知识，或者关联文档都不适合改 | 作为一条新的 Markdown 知识导入 RAGFlow |
+| 查看关联文档 | 想看 RAGFlow 认为它像哪些旧知识 | 展示命中的旧文档、命中片段和智能改写结果 |
+| 不入库 | 这条消息不适合沉淀 | 标记不入库 |
+
+这里最容易误会的是“关联文档”。RAGFlow 返回的是“相关片段”，不是“准确告诉我们该改哪一句”。它可能只是因为都有“云发单”这几个字，就把不太相关的文档找出来。
+
+比如用户问：
+
+```text
+云发单续费支持不支持开发票？
+```
+
+RAGFlow 可能命中：
+
+```text
+云发单支持平台列表
+```
+
+这不代表“平台列表”这个文档应该被改。它只是被召回了，需要再判断。
+
+所以我们加了“智能改写”：
+
+```mermaid
+flowchart TD
+  candidate[当前知识候选]
+  ragHit[RAGFlow 命中的旧文档片段]
+  rewriteBtn[点击智能改写]
+  topicJudge{是不是同一个知识主题}
+  noRewrite[不建议改这个文档]
+  matchSentence[定位真正命中的原句]
+  keywords[列出命中的关键词]
+  rewriteText[生成建议改写]
+  mergedText[生成合并后的局部内容]
+  human[人再决定怎么处理]
+
+  candidate --> rewriteBtn
+  ragHit --> rewriteBtn
+  rewriteBtn --> topicJudge
+  topicJudge -->|不是| noRewrite --> human
+  topicJudge -->|是| matchSentence --> keywords --> rewriteText --> mergedText --> human
+
+  classDef candidateLine fill:#f4f0ff,stroke:#9b7de3,color:#241044;
+  classDef ragLine fill:#eef6ff,stroke:#8bb7e0,color:#102a43;
+  classDef aiLine fill:#fff7e6,stroke:#d9a441,color:#3d2b00;
+  classDef resultLine fill:#eefaf1,stroke:#67b77a,color:#12351d;
+  classDef muted fill:#f5f5f5,stroke:#c9c9c9,color:#333;
+
+  class candidate candidateLine;
+  class ragHit ragLine;
+  class rewriteBtn,topicJudge,matchSentence,keywords,rewriteText,mergedText aiLine;
+  class human resultLine;
+  class noRewrite muted;
+```
+
+智能改写会给人看四块内容：
+
+| 区域 | 作用 |
+| --- | --- |
+| 原文 | RAGFlow 命中的旧片段 |
+| 命中的原句 | LLM 从旧片段里找出的真正相关句子 |
+| 建议改写 | 这句话应该怎么改或怎么补 |
+| 合并后的内容 | 把旧片段和新知识合在一起后，局部 Markdown 应该长什么样 |
+
+判断规则可以简单理解成：
+
+| 情况 | 怎么处理 |
+| --- | --- |
+| 没有关联文档 | 直接入库 |
+| 有关联文档，但全部“不建议改写” | 说明是误召回，直接入库 |
+| 有文档能定位到原句，并生成合并内容 | 人看完后再决定是否做后续覆盖 |
+
+当前页面先做“看清楚”和“生成建议”，不会自动把整篇旧 md 覆盖掉。因为一个 md 里可能有很多条知识，直接覆盖整篇会误删别的知识。真正覆盖时，应该只替换相关小段。
 
 ## 5. RAGFlow 是什么
 
