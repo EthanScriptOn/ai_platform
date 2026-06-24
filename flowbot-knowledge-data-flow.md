@@ -75,7 +75,7 @@ flowchart LR
   end
 
   classDef intake fill:#eef6ff,stroke:#8bb7e0,color:#102a43;
-  classDef caseLine fill:#fff7e6,stroke:#d9a441,color:#3d2b00;
+  classDef caseLine fill:#eef2ff,stroke:#8da2d6,color:#18264a;
   classDef botLine fill:#eefaf1,stroke:#67b77a,color:#12351d;
   classDef knowledgeLine fill:#f4f0ff,stroke:#9b7de3,color:#241044;
   classDef muted fill:#f5f5f5,stroke:#c9c9c9,color:#333;
@@ -133,7 +133,7 @@ flowchart TD
   classDef userLine fill:#eef6ff,stroke:#8bb7e0,color:#102a43;
   classDef botLine fill:#eefaf1,stroke:#67b77a,color:#12351d;
   classDef ragLine fill:#f4f0ff,stroke:#9b7de3,color:#241044;
-  classDef resultLine fill:#fff7e6,stroke:#d9a441,color:#3d2b00;
+  classDef resultLine fill:#eef2ff,stroke:#8da2d6,color:#18264a;
   classDef decisionLine fill:#fff0f6,stroke:#d66a9f,color:#421326;
 
   class group,send userLine;
@@ -175,7 +175,7 @@ flowchart TD
   importRagflow --> qa[后续问答和机器人可检索]
 
   classDef sourceLine fill:#eef6ff,stroke:#8bb7e0,color:#102a43;
-  classDef aiLine fill:#fff7e6,stroke:#d9a441,color:#3d2b00;
+  classDef aiLine fill:#eef2ff,stroke:#8da2d6,color:#18264a;
   classDef reviewLine fill:#f4f0ff,stroke:#9b7de3,color:#241044;
   classDef resultLine fill:#eefaf1,stroke:#67b77a,color:#12351d;
   classDef muted fill:#f5f5f5,stroke:#c9c9c9,color:#333;
@@ -274,7 +274,7 @@ flowchart TD
 
   classDef candidateLine fill:#f4f0ff,stroke:#9b7de3,color:#241044;
   classDef ragLine fill:#eef6ff,stroke:#8bb7e0,color:#102a43;
-  classDef aiLine fill:#fff7e6,stroke:#d9a441,color:#3d2b00;
+  classDef aiLine fill:#eef2ff,stroke:#8da2d6,color:#18264a;
   classDef resultLine fill:#eefaf1,stroke:#67b77a,color:#12351d;
   classDef muted fill:#f5f5f5,stroke:#c9c9c9,color:#333;
 
