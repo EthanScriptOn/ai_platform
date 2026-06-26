@@ -9,6 +9,18 @@ function createBatchPlannerService({
   requestLlmClassify,
   tryParseClassifyJson,
 }) {
+  const FOLLOWUP_MESSAGE_ROLES = new Set([
+    "evidence",
+    "developer_question",
+    "user_reply",
+    "troubleshooting_update",
+    "diagnosis",
+    "workaround",
+    "resolution",
+    "waiting_upstream",
+    "waiting_user",
+  ]);
+
   function buildBatchPlannerMessages(roomId, pendingMessages, toolResults = []) {
     const pending = pendingMessages.map((item) => buildBatchPlannerPendingMessage(item));
     const schemaText = [
@@ -116,6 +128,59 @@ function createBatchPlannerService({
         arguments: call?.arguments && typeof call.arguments === "object" ? call.arguments : {},
       }))
       .filter((call) => call.name === "search_cases_by_day");
+  }
+
+  function hasCaseToolResults(toolResults) {
+    return (Array.isArray(toolResults) ? toolResults : []).some((item) => Array.isArray(item?.result?.cases));
+  }
+
+  function hasAnyCaseToolHits(toolResults) {
+    return (Array.isArray(toolResults) ? toolResults : []).some((item) => Array.isArray(item?.result?.cases) && item.result.cases.length > 0);
+  }
+
+  function payloadHasFollowupNewCase(value) {
+    const groups = Array.isArray(value?.groups) ? value.groups : [];
+    return groups.some((group) => {
+      const action = String(group?.action || "").trim();
+      const messageRole = String(group?.message_role || "").trim();
+      return action === "new_case" && FOLLOWUP_MESSAGE_ROLES.has(messageRole);
+    });
+  }
+
+  function buildCaseLookupQueryFromPending(pendingMessages) {
+    return pendingMessages
+      .map((item) => buildBatchPlannerPendingMessage(item))
+      .map((item) => [
+        item.content,
+        item.transcript_text,
+        item.quote_content,
+        item.sender,
+      ].filter(Boolean).join(" "))
+      .join("\n")
+      .slice(0, 800);
+  }
+
+  function downgradeFollowupNewCasesWhenCandidatesExist(plan, toolResults) {
+    if (!hasAnyCaseToolHits(toolResults)) {
+      return plan;
+    }
+    return {
+      ...plan,
+      groups: plan.groups.map((group) => {
+        if (group.action !== "new_case" || !FOLLOWUP_MESSAGE_ROLES.has(group.messageRole)) {
+          return group;
+        }
+        return {
+          ...group,
+          action: "need_review",
+          targetCaseId: "",
+          reason: [
+            group.reason,
+            "系统已查到当天候选 Case，但模型仍想按进展类消息新建 Case；为避免重复归档，转人工确认。",
+          ].filter(Boolean).join("；"),
+        };
+      }),
+    };
   }
 
   function normalizeBatchPlannerCategory(value) {
@@ -277,12 +342,37 @@ function createBatchPlannerService({
           }
           continue;
         }
+        if (lookupCases && parsed.groups && payloadHasFollowupNewCase(parsed) && !hasCaseToolResults(toolResults)) {
+          const result = lookupCases({
+            query: buildCaseLookupQueryFromPending(pendingMessages),
+            page: 1,
+            limit: 10,
+          });
+          for (const item of result.cases || []) {
+            if (item?.case_id) {
+              knownCaseIds.add(item.case_id);
+            }
+          }
+          toolResults.push({
+            callIndex: toolResults.length + 1,
+            name: "search_cases_by_day",
+            arguments: {
+              query: buildCaseLookupQueryFromPending(pendingMessages),
+              page: 1,
+              limit: 10,
+              forced: true,
+            },
+            result,
+          });
+          continue;
+        }
+        const validated = validateBatchPlannerPayload(parsed, pendingTraceIds, knownCaseIds);
         return {
           ok: true,
           repaired: false,
           rawOutput,
           toolResults,
-          ...validateBatchPlannerPayload(parsed, pendingTraceIds, knownCaseIds),
+          ...downgradeFollowupNewCasesWhenCandidatesExist(validated, toolResults),
         };
       }
       throw new Error("schema_invalid:too_many_case_tool_rounds");
