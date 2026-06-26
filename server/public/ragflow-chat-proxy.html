@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAGFlow 问答</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f8fb;
+        --panel: #ffffff;
+        --border: #e4e7ec;
+        --text: #101828;
+        --muted: #667085;
+        --brand: #5b21b6;
+        --brand-soft: #ede9fe;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .app {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+
+      .header {
+        flex: 0 0 auto;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+
+      .title {
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      .subtitle {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .messages {
+        flex: 1 1 auto;
+        overflow: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      .card {
+        max-width: 860px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 10px;
+        padding: 14px 16px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .card.user {
+        align-self: flex-end;
+        background: var(--brand-soft);
+        border-color: #c4b5fd;
+      }
+
+      .card.assistant {
+        align-self: flex-start;
+      }
+
+      .meta {
+        margin-bottom: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .composer {
+        flex: 0 0 auto;
+        padding: 16px 20px 20px;
+        border-top: 1px solid var(--border);
+        background: var(--panel);
+      }
+
+      .composer-inner {
+        max-width: 980px;
+        margin: 0 auto;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 108px;
+        resize: vertical;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 12px 14px;
+        font: inherit;
+        color: inherit;
+        outline: none;
+        background: #fff;
+      }
+
+      textarea:focus {
+        border-color: #14b8a6;
+        box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .buttons {
+        display: flex;
+        gap: 10px;
+      }
+
+      button {
+        height: 36px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        padding: 0 14px;
+        font: inherit;
+        cursor: pointer;
+        background: #fff;
+        color: var(--text);
+      }
+
+      button.primary {
+        border-color: #5b21b6;
+        background: #5b21b6;
+        color: #fff;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="header">
+        <div class="title" id="chatTitle">RAGFlow 问答</div>
+        <div class="subtitle" id="chatSubtitle">正在初始化问答会话...</div>
+      </div>
+      <div class="messages" id="messages"></div>
+      <div class="composer">
+        <div class="composer-inner">
+          <textarea id="question" placeholder="请输入你的问题"></textarea>
+          <div class="actions">
+            <div class="status" id="status">正在初始化...</div>
+            <div class="buttons">
+              <button id="resetBtn">新建会话</button>
+              <button class="primary" id="sendBtn">发送</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      const CHAT_ID = "b2ab48f65eed11f1a23d1db71e8a20da";
+      const SESSION_KEY = `yuebai-ragflow-session:${CHAT_ID}`;
+
+      const elements = {
+        title: document.getElementById("chatTitle"),
+        subtitle: document.getElementById("chatSubtitle"),
+        messages: document.getElementById("messages"),
+        question: document.getElementById("question"),
+        status: document.getElementById("status"),
+        send: document.getElementById("sendBtn"),
+        reset: document.getElementById("resetBtn"),
+      };
+
+      let state = {
+        chat: null,
+        sessionId: "",
+        sending: false,
+      };
+
+      function setStatus(text) {
+        elements.status.textContent = text;
+      }
+
+      function setSending(sending) {
+        state.sending = sending;
+        elements.send.disabled = sending || !state.sessionId;
+        elements.reset.disabled = sending;
+        elements.question.disabled = sending || !state.sessionId;
+      }
+
+      function addMessage(role, content) {
+        const card = document.createElement("div");
+        card.className = `card ${role}`;
+        card.innerHTML = `<div class="meta">${role === "user" ? "你" : "知识库助手"}</div><div class="content"></div>`;
+        card.querySelector(".content").textContent = content || "";
+        elements.messages.appendChild(card);
+        elements.messages.scrollTop = elements.messages.scrollHeight;
+        return card.querySelector(".content");
+      }
+
+      async function requestJson(url, options = {}) {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        if (!response.ok || data.ok === false) {
+          throw new Error(data.error || `HTTP ${response.status}`);
+        }
+        return data;
+      }
+
+      async function ensureSession(force = false) {
+        if (!force) {
+          const cached = localStorage.getItem(SESSION_KEY);
+          if (cached) {
+            state.sessionId = cached;
+            setStatus("会话已恢复");
+            return cached;
+          }
+        }
+        setStatus("正在创建会话...");
+          const data = await requestJson("/api/ragflow-chat-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId: CHAT_ID }),
+        });
+        state.sessionId = data.session.id;
+        localStorage.setItem(SESSION_KEY, state.sessionId);
+        setStatus("会话已就绪");
+        return state.sessionId;
+      }
+
+      async function bootstrap() {
+        try {
+          const data = await requestJson(`/api/ragflow-chat-info?chatId=${encodeURIComponent(CHAT_ID)}`);
+          state.chat = data.chat;
+          elements.title.textContent = data.chat.name || "RAGFlow 问答";
+          elements.subtitle.textContent = (data.chat.kb_names || []).join(" / ") || "内部知识库问答";
+          await ensureSession(false);
+          setSending(false);
+        } catch (error) {
+          setStatus(`初始化失败：${error.message}`);
+          setSending(true);
+        }
+      }
+
+      async function sendQuestion() {
+        const question = elements.question.value.trim();
+        if (!question || state.sending) return;
+        if (!state.sessionId) {
+          setStatus("当前会话不可用");
+          return;
+        }
+
+        addMessage("user", question);
+        const assistantNode = addMessage("assistant", "");
+        elements.question.value = "";
+        setSending(true);
+        setStatus("正在生成回答...");
+
+        try {
+          const response = await fetch("/api/ragflow-chat-completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: CHAT_ID,
+              session_id: state.sessionId,
+              question,
+              quote: true,
+            }),
+          });
+
+          if (!response.ok || !response.body) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let answer = "";
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split("\n\n");
+            buffer = parts.pop() || "";
+            for (const part of parts) {
+              const line = part
+                .split("\n")
+                .find((item) => item.startsWith("data:"));
+              if (!line) continue;
+              const payload = line.slice(5).trim();
+              if (!payload) continue;
+              let json;
+              try {
+                json = JSON.parse(payload);
+              } catch {
+                continue;
+              }
+              if (json.code !== 0) {
+                throw new Error(json.message || "RAGFlow 返回错误");
+              }
+              if (json.data && typeof json.data === "object" && typeof json.data.answer === "string") {
+                answer = json.data.answer;
+                assistantNode.textContent = answer;
+                elements.messages.scrollTop = elements.messages.scrollHeight;
+              }
+            }
+          }
+
+          assistantNode.textContent = answer || "当前知识库没有搜索到明确答案。";
+          setStatus("回答完成");
+        } catch (error) {
+          assistantNode.textContent = `请求失败：${error.message}`;
+          setStatus(`请求失败：${error.message}`);
+        } finally {
+          setSending(false);
+        }
+      }
+
+      elements.send.addEventListener("click", sendQuestion);
+      elements.reset.addEventListener("click", async () => {
+        localStorage.removeItem(SESSION_KEY);
+        state.sessionId = "";
+        elements.messages.innerHTML = "";
+        setSending(true);
+        try {
+          await ensureSession(true);
+          setStatus("已创建新会话");
+          setSending(false);
+        } catch (error) {
+          setStatus(`创建新会话失败：${error.message}`);
+        }
+      });
+      elements.question.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+          event.preventDefault();
+          sendQuestion();
+        }
+      });
+
+      setSending(true);
+      bootstrap();
+    </script>
+  </body>
+</html>

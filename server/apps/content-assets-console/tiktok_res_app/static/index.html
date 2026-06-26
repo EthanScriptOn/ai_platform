@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>抖音视频直播采集</title>
+  <link rel="stylesheet" href="/static/styles-base.css" />
+  <link rel="stylesheet" href="/static/styles-workbench.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="mark">TR</div>
+      <div>
+        <h1>抖音视频直播采集</h1>
+      </div>
+    </div>
+    <div class="top-status">
+      <div class="pill warn" id="healthPill"><span class="dot"></span><span>服务检查中</span></div>
+      <div class="pill warn" id="authPill"><span class="dot"></span><span>登录状态检查中</span></div>
+    </div>
+  </header>
+
+  <main>
+    <div class="layout">
+      <aside class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">本机采集账号</h2>
+          <button class="secondary" type="button" onclick="refreshAuth()">刷新</button>
+        </div>
+        <div class="panel-body auth-card">
+          <div class="login-state" id="loginState">
+            <div class="state-icon">?</div>
+            <div>
+              <div class="state-title">读取中</div>
+              <div class="state-sub">正在检查是否已登录</div>
+            </div>
+          </div>
+
+          <div class="meta-grid">
+            <div class="metric">
+              <div class="metric-label">账号能否使用</div>
+              <div class="metric-value" id="cookieCount">-</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">最近同步</div>
+              <div class="metric-value" id="cookieTime">-</div>
+            </div>
+          </div>
+
+          <div class="auth-actions">
+            <button class="span" type="button" onclick="startLogin()">打开抖音并同步登录</button>
+            <button class="secondary" type="button" onclick="cancelLogin()">关闭抖音窗口</button>
+            <button class="danger span" type="button" onclick="logout()">退出登录</button>
+          </div>
+
+          <div class="hint" id="cookieKeys">-</div>
+        </div>
+      </aside>
+
+      <div>
+        <section class="panel guide-panel">
+          <div class="panel-head">
+            <h2 class="panel-title">操作流程</h2>
+          </div>
+          <div class="panel-body">
+            <div class="quick-guide">
+              <div class="guide-item"><strong>1. 先连上账号</strong>点左侧按钮，在打开的抖音窗口里完成登录。</div>
+              <div class="guide-item"><strong>2. 粘贴内容链接</strong>整段分享文案也可以直接粘贴进来。</div>
+              <div class="guide-item"><strong>3. 产出素材</strong>视频会进文件库，直播可同时录制和抓商品。</div>
+            </div>
+          </div>
+        </section>
+
+      <section class="panel command-panel">
+        <div class="panel-head">
+          <h2 class="panel-title">任务台</h2>
+          <div class="pill" id="selectedMode">下载视频</div>
+        </div>
+        <div class="panel-body">
+          <div class="tabs" role="tablist">
+            <button class="tab active" type="button" data-mode="video" onclick="selectMode('video')">下载视频</button>
+            <button class="tab" type="button" data-mode="live" onclick="selectMode('live')">处理直播</button>
+          </div>
+
+          <label for="url">抖音视频 / 直播链接</label>
+          <textarea id="url" placeholder="https://v.douyin.com/... 或 https://live.douyin.com/80017709309"></textarea>
+
+          <div class="live-options" id="liveOptions">
+            <label class="option" for="recordLive">
+              <input id="recordLive" type="checkbox" checked onchange="updateTaskUi()" />
+              <span>录制直播</span>
+            </label>
+            <label class="option" for="grabProducts">
+              <input id="grabProducts" type="checkbox" checked onchange="updateTaskUi()" />
+              <span>抓商品</span>
+            </label>
+            <label class="option" for="recordUntilEnd">
+              <input id="recordUntilEnd" type="checkbox" onchange="updateTaskUi()" />
+              <span>录到直播结束</span>
+            </label>
+            <label class="option" for="grabAllProducts">
+              <input id="grabAllProducts" type="checkbox" onchange="updateTaskUi()" />
+              <span>尽量获取全部商品</span>
+            </label>
+          </div>
+
+          <div class="field-grid">
+            <div id="durationField">
+              <label for="duration">最多录制多少秒</label>
+              <input id="duration" type="number" value="30" min="1" placeholder="例如 300 表示最多 5 分钟" />
+            </div>
+            <div id="limitField">
+              <label for="limit">最多获取多少个商品</label>
+              <input id="limit" type="number" value="20" min="1" max="100" />
+            </div>
+          </div>
+
+          <div class="submit-row">
+            <div class="hint" id="modeHint">适合普通视频或分享短链。</div>
+            <button id="submitButton" type="button" onclick="submitSelected()">开始下载</button>
+          </div>
+        </div>
+      </section>
+      </div>
+    </div>
+
+    <section class="panel clipper" id="clipper">
+      <div class="panel-head">
+        <h2 class="panel-title">剪辑台</h2>
+        <button class="secondary" type="button" onclick="closeClipper()">关闭</button>
+      </div>
+      <div class="panel-body clip-layout">
+        <video class="clip-video" id="clipVideo" controls></video>
+        <div class="hint" id="clipFile">选择一段录制文件后开始剪辑。</div>
+        <div class="clip-controls">
+          <div class="clip-timebar">
+            <div class="clip-time-labels">
+              <span>片段开始 <strong id="clipStartText">00:00.0</strong></span>
+              <span>片段结束 <strong id="clipEndText">00:00.0</strong></span>
+            </div>
+            <div class="dual-range" id="clipRangeTrack">
+              <div class="range-bubble start" id="clipStartBubble">00:00.0</div>
+              <div class="range-bubble end" id="clipEndBubble">00:00.0</div>
+              <div class="dual-track"></div>
+              <div class="range-handle start"></div>
+              <div class="range-handle end"></div>
+              <input id="clipStart" type="range" min="0" max="1" step="0.1" value="0" oninput="syncClipRange('start')" />
+              <input id="clipEnd" type="range" min="0" max="1" step="0.1" value="1" oninput="syncClipRange('end')" />
+            </div>
+            <div class="clip-selection">
+              <span id="clipDurationText">已选 00:00.0</span>
+              <span>拖动左右把手选择范围</span>
+            </div>
+          </div>
+        </div>
+        <div class="clip-actions">
+          <button class="secondary" type="button" onclick="seekClipStart()">跳到开始</button>
+          <button type="button" onclick="exportClip()">导出片段</button>
+        </div>
+        <div class="result-list clip-output" id="clipOutput"></div>
+      </div>
+    </section>
+
+    <section class="panel workspace-panel">
+      <div class="panel-head">
+        <h2 class="panel-title">资产库</h2>
+        <div class="workspace-actions">
+          <button class="secondary" type="button" onclick="refreshJobs()">刷新任务</button>
+          <button class="secondary" type="button" onclick="refreshLibrary()">刷新文件</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="tabs workspace-tabs" role="tablist">
+          <button class="tab active" type="button" data-workspace="jobs" onclick="selectWorkspace('jobs')">任务</button>
+          <button class="tab" type="button" data-workspace="library" onclick="selectWorkspace('library')">文件库</button>
+        </div>
+        <div class="workspace-pane active" id="jobsPane">
+          <div class="jobs-toolbar">
+            <div class="hint">按任务状态和任务类型快速筛选</div>
+            <div class="job-filters" role="tablist" aria-label="任务筛选">
+              <button class="filter-chip active" type="button" data-job-filter="all" onclick="selectJobFilter('all')">全部</button>
+              <button class="filter-chip" type="button" data-job-filter="running" onclick="selectJobFilter('running')">进行中</button>
+              <button class="filter-chip" type="button" data-job-filter="completed" onclick="selectJobFilter('completed')">已完成</button>
+              <button class="filter-chip" type="button" data-job-filter="cancelled" onclick="selectJobFilter('cancelled')">已暂停</button>
+              <button class="filter-chip" type="button" data-job-filter="failed" onclick="selectJobFilter('failed')">失败</button>
+              <button class="filter-chip" type="button" data-job-filter="video" onclick="selectJobFilter('video')">下载视频</button>
+              <button class="filter-chip" type="button" data-job-filter="live" onclick="selectJobFilter('live')">直播处理</button>
+              <button class="filter-chip" type="button" data-job-filter="video_map" onclick="selectJobFilter('video_map')">视频讲解商品</button>
+              <button class="filter-chip" type="button" data-job-filter="product_pool" onclick="selectJobFilter('product_pool')">商品匹配</button>
+            </div>
+          </div>
+          <div class="jobs" id="jobs"></div>
+        </div>
+        <div class="workspace-pane" id="libraryPane">
+          <div class="library-toolbar">
+            <input id="librarySearch" placeholder="搜索文件名或路径" oninput="renderLibrary()" />
+            <div class="library-filters" role="tablist" aria-label="文件筛选">
+              <button class="filter-chip active" type="button" data-library-filter="all" onclick="selectLibraryFilter('all')">全部</button>
+              <button class="filter-chip" type="button" data-library-filter="video" onclick="selectLibraryFilter('video')">视频</button>
+              <button class="filter-chip" type="button" data-library-filter="clip" onclick="selectLibraryFilter('clip')">剪辑片段</button>
+              <button class="filter-chip" type="button" data-library-filter="products" onclick="selectLibraryFilter('products')">商品数据</button>
+              <button class="filter-chip" type="button" data-library-filter="video_product_map" onclick="selectLibraryFilter('video_product_map')">视频识别结果</button>
+            </div>
+          </div>
+          <div class="jobs" id="library"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/static/app-core.js"></script>
+  <script src="/static/app-products.js"></script>
+  <script src="/static/app-product-matching.js"></script>
+  <script src="/static/app-jobs.js"></script>
+  <script src="/static/app-runtime.js"></script>
+</body>
+</html>

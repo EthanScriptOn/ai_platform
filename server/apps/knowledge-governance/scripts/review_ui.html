@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>知识歧义处理台</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #657083;
+      --line: #dde2ea;
+      --brand: #0f766e;
+      --brand-weak: #e3f4f1;
+      --warn: #a15c00;
+      --danger: #b42318;
+      --ok: #167647;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      height: 100vh;
+    }
+    aside {
+      border-right: 1px solid var(--line);
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+    header {
+      padding: 18px 18px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+    .sub { color: var(--muted); line-height: 1.5; }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--line);
+      flex-wrap: wrap;
+    }
+    button, select, input, textarea {
+      font: inherit;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 6px;
+    }
+    button {
+      padding: 8px 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+    button.ghost { background: #f9fafb; }
+    button.danger { color: var(--danger); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    select, input { padding: 8px; min-width: 0; }
+    .list {
+      overflow: auto;
+      padding: 8px;
+    }
+    .item {
+      padding: 12px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      cursor: pointer;
+      margin-bottom: 6px;
+      background: #fff;
+    }
+    .item.active {
+      border-color: var(--brand);
+      background: var(--brand-weak);
+    }
+    .item-title { font-weight: 650; line-height: 1.35; }
+    .meta {
+      color: var(--muted);
+      margin-top: 6px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .badge {
+      font-size: 12px;
+      padding: 2px 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--muted);
+    }
+    .badge.ok { color: var(--ok); border-color: #b7e2c8; background: #f0faf4; }
+    .badge.warn { color: var(--warn); border-color: #f0d3a2; background: #fff8eb; }
+    .badge.danger { color: var(--danger); border-color: #f3b8b2; background: #fff1f0; }
+    main {
+      min-width: 0;
+      overflow: auto;
+      padding: 22px 28px 48px;
+    }
+    .empty {
+      margin: 15vh auto;
+      max-width: 520px;
+      text-align: center;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+    .docline { color: var(--muted); line-height: 1.5; }
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .section h3 {
+      margin: 0 0 12px;
+      font-size: 15px;
+    }
+    .final-answer {
+      min-height: 190px;
+      font-size: 15px;
+      background: #fcfdfd;
+    }
+    details {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 14px;
+    }
+    summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    label {
+      display: block;
+      margin: 12px 0 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 92px;
+      padding: 10px;
+      line-height: 1.55;
+      resize: vertical;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .evidence {
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.7;
+    }
+    .actions {
+      position: sticky;
+      bottom: 0;
+      background: rgba(246,247,249,.94);
+      backdrop-filter: blur(8px);
+      border-top: 1px solid var(--line);
+      padding: 12px 0 0;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; height: auto; }
+      aside { height: 45vh; border-right: 0; border-bottom: 1px solid var(--line); }
+      main { padding: 18px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside>
+      <header>
+        <h1>知识歧义处理台</h1>
+        <div class="sub" id="stats">加载中...</div>
+      </header>
+      <div class="toolbar">
+        <select id="statusFilter">
+          <option value="pending">待审核</option>
+          <option value="approved">已通过</option>
+          <option value="rejected">已驳回</option>
+          <option value="all">全部</option>
+        </select>
+        <select id="visibilityFilter">
+          <option value="">全部可见性</option>
+          <option value="public_reply">客服可回复</option>
+          <option value="internal_only">仅内部</option>
+          <option value="needs_review">需审核</option>
+        </select>
+        <input id="searchBox" placeholder="搜歧义/文档" />
+      </div>
+      <div class="list" id="itemList"></div>
+    </aside>
+    <main id="detail">
+      <div class="empty">选择左侧歧义项开始处理。</div>
+    </main>
+  </div>
+  <script>
+    let allItems = [];
+    let current = null;
+
+    const $ = (id) => document.getElementById(id);
+
+    function badge(text, cls = "") {
+      return `<span class="badge ${cls}">${escapeHtml(text || "")}</span>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[ch]));
+    }
+
+    function lines(value) {
+      if (Array.isArray(value)) return value.join("\n");
+      return value || "";
+    }
+
+    function parseLines(value) {
+      return String(value || "").split(/\n+/).map(x => x.trim()).filter(Boolean);
+    }
+
+    function itemStatus(item) {
+      return item.decision?.status || "pending";
+    }
+
+    function statusLabel(status) {
+      return { pending: "待审核", approved: "已通过", rejected: "已驳回", changes_requested: "待审核" }[status] || status;
+    }
+
+    function renderStats() {
+      const counts = allItems.reduce((acc, item) => {
+        const status = itemStatus(item);
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
+      $("stats").textContent = `共 ${allItems.length} 条歧义，待处理 ${counts.pending || 0}，已确认 ${counts.approved || 0}，不入库 ${counts.rejected || 0}`;
+    }
+
+    function filteredItems() {
+      const status = $("statusFilter").value;
+      const visibility = $("visibilityFilter").value;
+      const q = $("searchBox").value.trim().toLowerCase();
+      return allItems.filter(item => {
+        const unit = item.unit;
+        const haystack = [
+          item.document_title, unit.title, unit.scope,
+          ...(unit.user_questions || []), unit.answer_for_customer, unit.internal_notes
+        ].join(" ").toLowerCase();
+        return (status === "all" || itemStatus(item) === status)
+          && (!visibility || unit.visibility === visibility)
+          && (!q || haystack.includes(q));
+      });
+    }
+
+    function renderList() {
+      renderStats();
+      const items = filteredItems();
+      $("itemList").innerHTML = items.map(item => {
+        const status = itemStatus(item);
+        const cls = status === "approved" ? "ok" : status === "rejected" ? "danger" : "warn";
+        const active = current?.id === item.id ? " active" : "";
+        return `<div class="item${active}" data-id="${item.id}">
+          <div class="item-title">${escapeHtml(item.unit.title)}</div>
+          <div class="meta">${escapeHtml(item.document_title)} · ${escapeHtml(item.unit.unit_type)} · 置信度 ${escapeHtml(item.unit.confidence)}</div>
+          <div class="badges">
+            ${badge(statusLabel(status), cls)}
+            ${badge(item.unit.visibility)}
+            ${item.unit.needs_human_review ? badge("有歧义", "warn") : ""}
+          </div>
+        </div>`;
+      }).join("") || `<div class="empty">没有符合条件的审核项。</div>`;
+      [...document.querySelectorAll(".item[data-id]")].forEach(el => {
+        el.onclick = () => selectItem(el.dataset.id);
+      });
+    }
+
+    function selectItem(id) {
+      current = allItems.find(item => item.id === id);
+      renderList();
+      renderDetail();
+    }
+
+    function renderDetail() {
+      if (!current) {
+      $("detail").innerHTML = `<div class="empty">选择左侧歧义项开始处理。</div>`;
+        return;
+      }
+      const unit = current.decision?.unit || current.unit;
+      const finalContent = unit.final_content || unit.answer_for_customer || unit.internal_notes || lines(unit.steps);
+      $("detail").innerHTML = `
+        <div class="topbar">
+          <div>
+            <h2>${escapeHtml(unit.title)}</h2>
+            <div class="docline">
+              文档：${escapeHtml(current.document_title)}<br>
+              飞书：<a href="${escapeHtml(current.feishu_url)}" target="_blank">${escapeHtml(current.feishu_url)}</a>
+            </div>
+          </div>
+          <div class="badges">
+            ${badge(statusLabel(itemStatus(current)), itemStatus(current) === "approved" ? "ok" : itemStatus(current) === "rejected" ? "danger" : "warn")}
+            ${badge(unit.visibility)}
+            ${badge(unit.unit_type)}
+          </div>
+        </div>
+        <div class="section">
+          <h3>模型认为哪里有歧义</h3>
+          <div>${escapeHtml(unit.review_reason || "模型认为这条知识的可见性或内容准确性需要人工确认。")}</div>
+        </div>
+        <div class="section">
+          <h3>原文证据</h3>
+          <ul class="evidence">${(unit.source_evidence || []).map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
+        </div>
+        <div class="section">
+          <h3>答案</h3>
+          <label>确认后真正给用户看的答案</label>
+          <textarea id="finalContent" class="final-answer">${escapeHtml(finalContent)}</textarea>
+          <div class="grid">
+            <div>
+              <label>可见性</label>
+              <select id="visibilityEdit" style="width:100%">
+                <option value="public_reply" ${unit.visibility === "public_reply" ? "selected" : ""}>客服可回复</option>
+                <option value="internal_only" ${unit.visibility === "internal_only" ? "selected" : ""}>仅内部</option>
+                <option value="needs_review" ${unit.visibility === "needs_review" ? "selected" : ""}>仍需继续确认</option>
+              </select>
+            </div>
+            <div>
+              <label>适用范围</label>
+              <textarea id="scope">${escapeHtml(unit.scope)}</textarea>
+            </div>
+          </div>
+        </div>
+        <details>
+          <summary>高级信息</summary>
+          <label>常见问法</label>
+          <textarea id="questions">${escapeHtml(lines(unit.user_questions))}</textarea>
+          <label>模型原始客服话术</label>
+          <textarea id="answer">${escapeHtml(unit.answer_for_customer)}</textarea>
+          <label>模型原始步骤</label>
+          <textarea id="steps">${escapeHtml(lines(unit.steps))}</textarea>
+          <label>模型原始内部说明</label>
+          <textarea id="internal">${escapeHtml(unit.internal_notes)}</textarea>
+        </details>
+        <div class="actions">
+          <button class="primary" onclick="saveDecision('approved')">确认入库</button>
+          <button class="danger" onclick="saveDecision('rejected')">不入库</button>
+          <button onclick="exportApproved()">导出已通过知识</button>
+          <button onclick="importRagflow()">导入 RAGFlow</button>
+        </div>
+      `;
+    }
+
+    function editedUnit() {
+      const unit = JSON.parse(JSON.stringify(current.decision?.unit || current.unit));
+      unit.user_questions = parseLines($("questions").value);
+      unit.scope = $("scope").value.trim();
+      unit.visibility = $("visibilityEdit").value;
+      unit.final_content = $("finalContent").value.trim();
+      unit.answer_for_customer = $("answer").value.trim();
+      unit.steps = parseLines($("steps").value);
+      unit.internal_notes = $("internal").value.trim();
+      if (unit.visibility === "public_reply") {
+        unit.answer_for_customer = unit.final_content;
+      } else if (unit.final_content) {
+        unit.internal_notes = unit.final_content;
+      }
+      return unit;
+    }
+
+    async function saveDecision(status) {
+      if (!current) return;
+      const note = status === "approved" ? "" : prompt("备注原因：", current.decision?.note || "") || "";
+      const resp = await fetch("/api/decision", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: current.id, status, note, unit: editedUnit() })
+      });
+      if (!resp.ok) {
+        alert("保存失败");
+        return;
+      }
+      await loadItems(current.id);
+    }
+
+    async function exportApproved() {
+      const resp = await fetch("/api/export", { method: "POST" });
+      const data = await resp.json();
+      alert(`已导出 ${data.count} 条知识：\n${data.path}`);
+    }
+
+    async function importRagflow() {
+      const ok = confirm("将已通过知识导入 RAGFlow，并替换同名旧文档。继续吗？");
+      if (!ok) return;
+      const resp = await fetch("/api/import-ragflow", { method: "POST" });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        alert(`导入失败：${data.error || "未知错误"}`);
+        return;
+      }
+      alert(`已导入 RAGFlow：${data.document_name}\n知识条数：${data.count}\n文档ID：${data.document_ids.join(", ")}`);
+    }
+
+    async function loadItems(selectId = null) {
+      const resp = await fetch("/api/items");
+      const data = await resp.json();
+      allItems = data.items;
+      const nextId = selectId || current?.id || allItems[0]?.id;
+      current = allItems.find(item => item.id === nextId) || null;
+      renderList();
+      renderDetail();
+    }
+
+    ["statusFilter", "visibilityFilter", "searchBox"].forEach(id => {
+      window.addEventListener("DOMContentLoaded", () => $(id).addEventListener("input", renderList));
+    });
+    window.addEventListener("DOMContentLoaded", () => loadItems());
+  </script>
+</body>
+</html>

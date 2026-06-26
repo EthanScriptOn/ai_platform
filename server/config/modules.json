@@ -1,0 +1,80 @@
+{
+  "modules": [
+    {
+      "id": "platform-api",
+      "name": "悦拜AI工具平台后台",
+      "language": "node",
+      "type": "platform",
+      "workingDir": ".",
+      "start": "node server.js",
+      "port": 8788,
+      "deploy": "systemd"
+    },
+    {
+      "id": "flowbot",
+      "name": "群机器人后台",
+      "language": "node",
+      "type": "managed-service",
+      "workingDir": "apps/flowbot-bridge",
+      "start": "node server.js",
+      "worker": "node scripts/agent_task_worker.js",
+      "port": 3010,
+      "routePrefix": "/flowbot",
+      "deploy": "systemd",
+      "dataDir": "data/customer-bot-data"
+    },
+    {
+      "id": "knowledge-governance",
+      "name": "知识治理流水线",
+      "language": "python",
+      "type": "internal-pipeline",
+      "workingDir": "apps/knowledge-governance",
+      "dataDir": "data/knowledge-governance",
+      "entry": "scripts/govern_docs.py",
+      "deploy": "platform-api"
+    },
+    {
+      "id": "ragflow",
+      "name": "RAGFlow 知识库问答",
+      "language": "docker",
+      "type": "external-service",
+      "baseUrlEnv": "RAGFLOW_BASE_URL",
+      "chatUrlEnv": "RAGFLOW_CHAT_URL",
+      "port": 8080,
+      "deploy": "external"
+    },
+    {
+      "id": "intel-api-service",
+      "name": "AI搜索情报后端",
+      "language": "python",
+      "type": "managed-service",
+      "workingDir": "apps/intel-api-service",
+      "start": "python -m uvicorn app:app --host 127.0.0.1 --port 8010",
+      "port": 8010,
+      "deploy": "systemd"
+    },
+    {
+      "id": "content-assets",
+      "name": "内容资产后台",
+      "language": "python",
+      "type": "managed-service",
+      "workingDir": "apps/content-assets-console",
+      "start": "python -m uvicorn tiktok_res_app.server_app:app --host 127.0.0.1 --port 8767",
+      "port": 8767,
+      "routePrefix": "/content-assets-service",
+      "healthPath": "/content-assets-service/api/health",
+      "deploy": "systemd",
+      "dataDir": "data/content-assets"
+    },
+    {
+      "id": "wechat-video-collector",
+      "name": "微信视频号采集后台包",
+      "language": "go",
+      "type": "client-agent",
+      "workingDir": "collector",
+      "build": "go build -o yuebai-wechat-collector .",
+      "port": 18765,
+      "deploy": "client-launchagent"
+    }
+  ]
+}

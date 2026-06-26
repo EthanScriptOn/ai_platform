@@ -1,0 +1,15 @@
+[Unit]
+Description=Yuebai Flowbot Agent Worker
+After=network.target wecom-flowbot.service
+
+[Service]
+Type=simple
+User=__DEPLOY_USER__
+WorkingDirectory=__INSTALL_ROOT__/current
+Environment=FLOWBOT_CONFIG_PATH=__INSTALL_ROOT__/shared/flowbot.json
+ExecStart=/bin/bash __INSTALL_ROOT__/current/scripts/prod-flowbot-worker.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

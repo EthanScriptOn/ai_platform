@@ -1,0 +1,34 @@
+{
+  "name": "yuebai-ai-tool-platform-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev:all": "bash scripts/dev-all.sh",
+    "dev:flowbot": "bash scripts/dev-flowbot.sh",
+    "dev:flowbot-worker": "bash scripts/dev-flowbot-worker.sh",
+    "dev:content-assets": "bash scripts/dev-content-assets-console.sh",
+    "eval:group-intent:mongo": "node scripts/group-intent-mongo-eval.js",
+    "status:group-intent:mongo": "node scripts/group-intent-mongo-status.js",
+    "train:group-intent:mongo": "node scripts/group-intent-mongo-train.js",
+    "check": "npm run check:syntax && npm test",
+    "check:all": "npm run check && npm run test:collector && npm run check:python:compile",
+    "check:syntax": "node --check server.js && node --check apps/flowbot-bridge/server.js && node --check apps/flowbot-bridge/scripts/light_agent_runtime.js && node --check apps/flowbot-bridge/scripts/agent_task_worker.js && node --check apps/flowbot-bridge/scripts/simulated_e2e_smoke.js && node --check apps/flowbot-bridge/scripts/simulated_e2e_error_reporter.js",
+    "check:python:compile": "python3 -m py_compile apps/content-assets-console/_shared_path.py $(find apps/content-assets-shared apps/content-assets-console -name '*.py' -not -path '*/__pycache__/*' -not -path '*/.pytest_cache/*')",
+    "test:python": "npm run test:content-assets-console",
+    "test:content-assets-console": "cd apps/content-assets-console && python3 -m pytest -q",
+    "test": "npm run test:unit",
+    "test:unit": "node --test lib/*.test.js apps/flowbot-bridge/lib/*.test.js apps/flowbot-bridge/scripts/light_agent_runtime.test.js apps/flowbot-bridge/scripts/feishu_callback.test.js",
+    "test:integration": "node --test apps/flowbot-bridge/scripts/joint_regression.test.js",
+    "test:collector": "cd collector && go test ./...",
+    "build:collector": "cd collector && go build -o yuebai-wechat-collector .",
+    "deploy:linux": "bash scripts/deploy-linux.sh"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "mongodb": "^6.21.0"
+  }
+}

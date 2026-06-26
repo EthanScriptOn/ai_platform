@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Yuebai Content Assets Bridge</title>
+  </head>
+  <body>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const parentOrigin = params.get("origin") || "*";
+
+      async function requestLocal(message) {
+        const request = message && message.request ? message.request : {};
+        const apiPath = request.path || "/api/health";
+        const options = request.options || {};
+        const response = await fetch(apiPath, options);
+        const contentType = response.headers.get("content-type") || "";
+        const data = contentType.includes("application/json")
+          ? await response.json()
+          : { ok: response.ok, body: await response.text() };
+        if (!response.ok) {
+          throw new Error(data.error || data.detail || data.message || ("HTTP " + response.status));
+        }
+        return data;
+      }
+
+      window.addEventListener("message", async (event) => {
+        if (parentOrigin !== "*" && event.origin !== parentOrigin) return;
+        const message = event.data || {};
+        if (message.source !== "yuebai-platform" || !message.id) return;
+        try {
+          const data = await requestLocal(message);
+          event.source.postMessage({
+            source: "yuebai-collector-bridge",
+            id: message.id,
+            ok: true,
+            data,
+          }, event.origin);
+        } catch (error) {
+          event.source.postMessage({
+            source: "yuebai-collector-bridge",
+            id: message.id,
+            ok: false,
+            error: error && error.message ? error.message : "请求失败",
+          }, event.origin);
+        }
+      });
+
+      window.parent.postMessage({ source: "yuebai-collector-bridge", ready: true }, parentOrigin);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+[Unit]
+Description=Yuebai Content Assets Module
+After=network.target
+
+[Service]
+Type=simple
+User=__DEPLOY_USER__
+WorkingDirectory=__INSTALL_ROOT__/current
+Environment=CONTENT_ASSET_CONFIG_FILE=__INSTALL_ROOT__/shared/content-assets.json
+ExecStart=/bin/bash __INSTALL_ROOT__/current/scripts/prod-content-assets-console.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

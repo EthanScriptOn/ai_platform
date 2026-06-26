@@ -1,0 +1,23 @@
+{
+  "llm": {
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "api_key": "sk-...",
+    "web_search_model": "qwen3.7-plus",
+    "query_expand_model": "qwen3.7-plus",
+    "ssl_verify": true
+  },
+  "budget": {
+    "max_expansion_queries": 2,
+    "max_followup_queries": 1,
+    "max_rounds": 2,
+    "round1_per_query_limit": 4,
+    "followup_per_query_limit": 3
+  },
+  "x": {
+    "chrome_profile": "Profile 10",
+    "proxy": ""
+  },
+  "sec": {
+    "identity": "Your Name your@email.com"
+  }
+}

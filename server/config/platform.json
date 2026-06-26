@@ -1,0 +1,122 @@
+{
+  "modules": [
+    {
+      "id": "flowbot",
+      "name": "群机器人后台",
+      "description": "",
+      "category": "客服机器人",
+      "url": "/flowbot/dashboard",
+      "status": "online",
+      "backend": {
+        "type": "reverse_proxy",
+        "baseUrlEnv": "FLOWBOT_BASE_URL",
+        "defaultBaseUrl": "http://127.0.0.1:3010",
+        "pathPrefix": "/flowbot"
+      },
+      "deploy": {
+        "serviceName": "flowbot",
+        "mode": "managed",
+        "language": "node",
+        "workingDir": "apps/flowbot-bridge",
+        "startCommand": "node server.js",
+        "workerCommand": "node scripts/agent_task_worker.js",
+        "healthPath": "/flowbot/dashboard/data?limit=1"
+      }
+    },
+    {
+      "id": "knowledge",
+      "name": "知识治理与问答",
+      "description": "",
+      "category": "知识库",
+      "kind": "external",
+      "url": "/ragflow-workbench-bridge.html",
+      "status": "online",
+      "deploy": {
+        "serviceName": "ragflow",
+        "mode": "external",
+        "language": "docker",
+        "baseUrlEnv": "RAGFLOW_BASE_URL",
+        "healthPath": "/"
+      }
+    },
+    {
+      "id": "knowledge-governance",
+      "name": "知识候选审核",
+      "description": "人工处理歧义，确认后入 RAGFlow",
+      "category": "知识库",
+      "kind": "internal",
+      "hidden": true,
+      "url": "${RAGFLOW_CHAT_URL}",
+      "status": "online",
+      "deploy": {
+        "serviceName": "knowledge-governance",
+        "mode": "internal",
+        "language": "python",
+        "workingDir": "apps/knowledge-governance",
+        "dataDir": "data/knowledge-governance"
+      }
+    },
+    {
+      "id": "ai-search",
+      "name": "AI搜索",
+      "description": "",
+      "category": "智能体",
+      "kind": "internal",
+      "status": "beta"
+    },
+    {
+      "id": "persona-distill",
+      "name": "人物蒸馏",
+      "description": "",
+      "category": "智能体",
+      "kind": "internal",
+      "status": "draft",
+      "deploy": {
+        "serviceName": "persona-distillation",
+        "mode": "internal",
+        "language": "node",
+        "dataDir": "data/persona-distillation"
+      }
+    },
+    {
+      "id": "content-assets",
+      "name": "抖音视频直播采集",
+      "description": "",
+      "category": "内容资产",
+      "url": "/content-assets-service/",
+      "status": "online",
+      "backend": {
+        "type": "reverse_proxy",
+        "baseUrl": "${CONTENT_ASSET_BASE_URL}",
+        "baseUrlEnv": "CONTENT_ASSET_BASE_URL",
+        "defaultBaseUrl": "http://127.0.0.1:8767",
+        "pathPrefix": "/content-assets-service",
+        "stripPrefix": true
+      },
+      "deploy": {
+        "serviceName": "content-assets",
+        "mode": "managed",
+        "language": "python",
+        "workingDir": "apps/content-assets-console",
+        "startCommand": "python -m uvicorn tiktok_res_app.server_app:app --host 127.0.0.1 --port 8767",
+        "healthPath": "/content-assets-service/api/health"
+      }
+    },
+    {
+      "id": "group-intent",
+      "name": "群聊介入决策",
+      "description": "",
+      "category": "客服机器人",
+      "kind": "internal",
+      "status": "draft"
+    },
+    {
+      "id": "wechat-video",
+      "name": "微信视频号采集",
+      "description": "",
+      "category": "内容资产",
+      "kind": "internal",
+      "status": "draft"
+    }
+  ]
+}

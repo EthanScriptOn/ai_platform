@@ -1,0 +1,17 @@
+{
+  "FLOWBOT_HOST": "127.0.0.1",
+  "FLOWBOT_PORT": 3010,
+  "FLOWBOT_BASE_URL": "http://127.0.0.1:3010",
+  "FLOWBOT_AGENT_BASE_URL": "http://127.0.0.1:3010/flowbot/agent",
+  "FLOWBOT_DASHBOARD_PUBLIC_URL": "http://127.0.0.1:8788",
+  "FLOWBOT_DATA_DIR": "/path/to/customer-bot-data",
+  "FLOWBOT_KNOWLEDGE_DIR": "/path/to/flowbot-knowledge",
+  "FLOWBOT_STORAGE_BACKEND": "mysql",
+  "FLOWBOT_MYSQL_BIN": "/path/to/scripts/mysql-via-docker.sh",
+  "FLOWBOT_MYSQL_HOST": "127.0.0.1",
+  "FLOWBOT_MYSQL_PORT": 3306,
+  "FLOWBOT_MYSQL_DATABASE": "flowbot_runtime",
+  "FLOWBOT_MYSQL_USER": "flowbot_app",
+  "FLOWBOT_MYSQL_PASSWORD": "",
+  "FLOWBOT_MYSQL_AUTO_MIGRATE": 1
+}

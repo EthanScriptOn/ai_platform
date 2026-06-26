@@ -1,0 +1,15 @@
+[Unit]
+Description=Yuebai Intel API Service
+After=network.target
+
+[Service]
+Type=simple
+User=__DEPLOY_USER__
+WorkingDirectory=__INSTALL_ROOT__/current
+Environment=INTEL_API_CONFIG_PATH=__INSTALL_ROOT__/shared/intel-api.json
+ExecStart=/bin/bash __INSTALL_ROOT__/current/scripts/prod-intel-api.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

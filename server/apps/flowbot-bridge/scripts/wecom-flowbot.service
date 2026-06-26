@@ -1,0 +1,28 @@
+[Unit]
+Description=WeCom Flowbot Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/wecom-flowbot/flowbot-bridge
+Environment=PORT=3010
+Environment=FLOWBOT_DATA_DIR=/opt/wecom-flowbot/customer-bot-data
+Environment=FLOWBOT_LLM_API_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+Environment=FLOWBOT_LLM_API_KEY=""
+Environment=FLOWBOT_LLM_MODEL="qwen3.7-max"
+Environment=FLOWBOT_LLM_TIMEOUT_MS="90000"
+Environment=FLOWBOT_AGENT_ID="flowbot"
+Environment=FLOWBOT_AGENT_WAKE_NAMES="小智"
+Environment=FLOWBOT_AGENT_LANE_ENABLED="1"
+Environment=FLOWBOT_AGENT_SESSION_KEY_STRATEGY="wake"
+Environment=FLOWBOT_TARGET_ROOM_IDS=""
+Environment=FLOWBOT_FEISHU_TARGET_CHAT_IDS=""
+Environment=FLOWBOT_ARCHIVE_PYTHON="/usr/bin/python3.11"
+Environment=FLOWBOT_UPSTREAM_WECOM_API_BASE="http://47.105.83.171:23789"
+ExecStart=/usr/bin/node /opt/wecom-flowbot/flowbot-bridge/server.js
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

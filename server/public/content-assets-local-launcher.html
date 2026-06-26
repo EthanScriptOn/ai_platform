@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>抖音视频直播采集</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f5f7fb;
+        color: #111827;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #f5f7fb;
+      }
+
+      .shell {
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .panel {
+        display: none;
+        max-width: 760px;
+        margin: 0 auto;
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+      }
+
+      .panel.show {
+        display: block;
+      }
+
+      .kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #4338ca;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      h1 {
+        margin: 14px 0 10px;
+        font-size: 26px;
+        line-height: 1.2;
+      }
+
+      p {
+        margin: 0;
+        color: #475467;
+        line-height: 1.7;
+      }
+
+      .status {
+        margin-top: 18px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: #f8fafc;
+        color: #334155;
+        border: 1px solid #e2e8f0;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 10px;
+        padding: 11px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s ease, opacity 0.2s ease;
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.7;
+      }
+
+      .primary {
+        background: #111827;
+        color: #ffffff;
+      }
+
+      .primary:hover {
+        background: #1f2937;
+      }
+
+      .secondary {
+        background: #eef2f7;
+        color: #0f172a;
+      }
+
+      .secondary:hover {
+        background: #e2e8f0;
+      }
+
+      .command {
+        margin-top: 18px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: #0f172a;
+        color: #e2e8f0;
+        font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+
+      .hint {
+        margin-top: 10px;
+        font-size: 13px;
+        color: #667085;
+      }
+
+      .loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: calc(100vh - 40px);
+        color: #475467;
+        font-size: 14px;
+      }
+
+      .frame {
+        display: none;
+        width: 100%;
+        height: calc(100vh - 40px);
+        border: 0;
+        border-radius: 16px;
+        background: #ffffff;
+      }
+
+      .frame.show {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div id="loading" class="loading">正在连接本机抖音工作台...</div>
+
+      <div id="panel" class="panel">
+        <span class="kicker">本机执行</span>
+        <h1>抖音登录、抓取、下载都在用户电脑完成</h1>
+        <p>服务端只负责保存任务记录、商品结果和平台配置。本机工作台启动后，这里会直接进入历史工作台页面。</p>
+        <div id="status" class="status">正在检测本机工作台...</div>
+        <div class="actions">
+          <button id="retry" class="primary" type="button">重新检测</button>
+          <button id="copy" class="secondary" type="button">复制安装命令</button>
+        </div>
+        <div id="command" class="command" hidden></div>
+        <div class="hint">如果你已经装过本机工作台，只需要把它启动起来，然后点“重新检测”。</div>
+      </div>
+
+      <iframe id="frame" class="frame" title="抖音本机工作台"></iframe>
+    </div>
+
+    <script>
+      const DEFAULT_COLLECTOR_URL = "http://127.0.0.1:8767";
+      const loadingEl = document.getElementById("loading");
+      const panelEl = document.getElementById("panel");
+      const statusEl = document.getElementById("status");
+      const frameEl = document.getElementById("frame");
+      const retryEl = document.getElementById("retry");
+      const copyEl = document.getElementById("copy");
+      const commandEl = document.getElementById("command");
+
+      let collectorBaseUrl = DEFAULT_COLLECTOR_URL;
+      let installBaseUrl = window.location.origin;
+      let checkTimer = null;
+
+      async function loadConfig() {
+        try {
+          const response = await fetch("/api/content-assets/config", { cache: "no-store" });
+          const data = await response.json();
+          if (data && data.collectorBaseUrl) collectorBaseUrl = data.collectorBaseUrl;
+          if (data && data.installBaseUrl) installBaseUrl = data.installBaseUrl;
+        } catch (_) {}
+      }
+
+      function installCommand() {
+        return `/bin/bash -c "$(curl -fsSL ${installBaseUrl}/install/yuebai-douyin-collector-macos.sh)"`;
+      }
+
+      function setLoading(text) {
+        loadingEl.textContent = text;
+        loadingEl.style.display = "flex";
+      }
+
+      function showPanel(message, showCommand) {
+        loadingEl.style.display = "none";
+        frameEl.classList.remove("show");
+        panelEl.classList.add("show");
+        statusEl.textContent = message;
+        commandEl.hidden = !showCommand;
+        if (showCommand) commandEl.textContent = installCommand();
+      }
+
+      function showFrame() {
+        loadingEl.style.display = "none";
+        panelEl.classList.remove("show");
+        frameEl.classList.add("show");
+        if (frameEl.src !== collectorBaseUrl + "/") {
+          frameEl.src = collectorBaseUrl;
+        }
+      }
+
+      async function checkLocalWorkbench(silent = false) {
+        if (!silent) {
+          retryEl.disabled = true;
+          setLoading("正在连接本机抖音工作台...");
+        }
+        try {
+          const controller = new AbortController();
+          const timeout = window.setTimeout(() => controller.abort(), 2500);
+          const response = await fetch(`${collectorBaseUrl}/api/health`, {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          window.clearTimeout(timeout);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          showFrame();
+          if (checkTimer === null) {
+            checkTimer = window.setInterval(() => checkLocalWorkbench(true), 8000);
+          }
+        } catch (error) {
+          showPanel("当前电脑还没有连上本机工作台。先启动本机工作台，再回来重新检测。", true);
+        } finally {
+          retryEl.disabled = false;
+        }
+      }
+
+      retryEl.addEventListener("click", () => checkLocalWorkbench(false));
+      copyEl.addEventListener("click", async () => {
+        const text = installCommand();
+        try {
+          await navigator.clipboard.writeText(text);
+          statusEl.textContent = "安装命令已复制。";
+        } catch (_) {
+          commandEl.hidden = false;
+          commandEl.textContent = text;
+          statusEl.textContent = "浏览器未能直接复制，安装命令已展开。";
+        }
+      });
+
+      window.addEventListener("beforeunload", () => {
+        if (checkTimer !== null) window.clearInterval(checkTimer);
+      });
+
+      loadConfig().finally(() => checkLocalWorkbench(false));
+    </script>
+  </body>
+</html>

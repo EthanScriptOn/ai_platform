@@ -1,0 +1,29 @@
+[Unit]
+Description=WeCom Flowbot Light Agent Worker
+After=network.target wecom-flowbot.service
+Requires=wecom-flowbot.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/wecom-flowbot/flowbot-bridge
+Environment=FLOWBOT_AGENT_BASE_URL="http://127.0.0.1:3010/flowbot/agent"
+Environment=FLOWBOT_LLM_API_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+Environment=FLOWBOT_LLM_API_KEY=""
+Environment=FLOWBOT_LLM_MODEL="qwen3.7-max"
+Environment=FLOWBOT_LLM_TIMEOUT_MS="90000"
+Environment=FLOWBOT_LLM_TIMEOUT_RETRY_ATTEMPTS="5"
+Environment=FLOWBOT_LLM_TIMEOUT_RETRY_BASE_DELAY_MS="1000"
+Environment=FLOWBOT_LLM_TIMEOUT_RETRY_MAX_DELAY_MS="16000"
+Environment=FLOWBOT_AGENT_NAME="小智"
+Environment=FLOWBOT_AGENT_ID="flowbot"
+Environment=FLOWBOT_AGENT_TOOL_MAX_STEPS="4"
+Environment=FLOWBOT_AGENT_HANDLER="wecom-flowbot-agent-worker"
+Environment=FLOWBOT_AGENT_POLL_INTERVAL_MS="1000"
+Environment=FLOWBOT_AGENT_MAX_CONCURRENCY="4"
+ExecStart=/usr/bin/node /opt/wecom-flowbot/flowbot-bridge/scripts/agent_task_worker.js
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

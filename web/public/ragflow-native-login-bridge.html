@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RAGFlow 问答</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+      }
+
+      .shell {
+        position: fixed;
+        inset: 0;
+      }
+
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #fff;
+      }
+
+      .loading {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #475467;
+        font-size: 14px;
+        background: #f8fafc;
+      }
+
+      .panel {
+        width: min(560px, calc(100vw - 48px));
+        padding: 24px 26px;
+        border: 1px solid #e4e7ec;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 12px 32px rgba(16, 24, 40, 0.08);
+      }
+
+      .title {
+        margin: 0 0 10px;
+        color: #101828;
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      .desc {
+        margin: 0;
+        color: #475467;
+        line-height: 1.7;
+        white-space: pre-line;
+      }
+
+      .actions {
+        margin-top: 16px;
+      }
+
+      .retry {
+        height: 34px;
+        border: 1px solid #c4b5fd;
+        border-radius: 6px;
+        padding: 0 14px;
+        background: #ede9fe;
+        color: #5b21b6;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .retry:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      .loading.hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="loading" id="loading">
+        <div class="panel">
+          <h1 class="title" id="title">正在进入 RAGFlow...</h1>
+          <p class="desc" id="desc">正在准备本地问答服务。</p>
+          <div class="actions">
+            <button class="retry" id="retryBtn" type="button">重新进入</button>
+          </div>
+        </div>
+      </div>
+      <iframe id="frame" title="RAGFlow 原生页面"></iframe>
+    </div>
+    <script>
+      const frame = document.getElementById("frame");
+      const loading = document.getElementById("loading");
+      const title = document.getElementById("title");
+      const desc = document.getElementById("desc");
+      const retryBtn = document.getElementById("retryBtn");
+      let retryTimer = null;
+      let navigationTimer = null;
+      let attempt = 0;
+
+      async function requestJson(url) {
+        const target = new URL(url, window.location.origin);
+        target.searchParams.set("_t", String(Date.now()));
+        const res = await fetch(target.toString(), { cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok || data.ok === false) {
+          throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        return data;
+      }
+
+      function showError(message) {
+        title.textContent = "本地 RAGFlow 未就绪";
+        desc.textContent = `${message}\n\n页面会自动重试，也可以手动重新进入。`;
+        retryBtn.disabled = false;
+      }
+
+      function showLoading(text) {
+        loading.classList.remove("hidden");
+        title.textContent = "正在进入 RAGFlow...";
+        desc.textContent = text || "正在准备本地问答服务。";
+        retryBtn.disabled = true;
+      }
+
+      function scheduleRetry() {
+        window.clearTimeout(retryTimer);
+        const delay = Math.min(8000, 1500 + attempt * 1000);
+        retryTimer = window.setTimeout(() => start(true), delay);
+      }
+
+      async function start(isRetry = false) {
+        try {
+          attempt += 1;
+          showLoading(isRetry ? "正在重新获取 RAGFlow 登录状态..." : "正在准备本地问答服务。");
+          const session = await requestJson("/api/ragflow-native-session");
+          window.clearTimeout(retryTimer);
+          window.clearTimeout(navigationTimer);
+          const loginUrl = session.loginUrl || session.targetUrl;
+          const targetUrl = session.targetUrl || loginUrl;
+          let enteredTarget = loginUrl === targetUrl;
+          frame.onload = () => {
+            if (!enteredTarget && targetUrl) {
+              enteredTarget = true;
+              navigationTimer = window.setTimeout(() => {
+                frame.src = targetUrl;
+              }, 500);
+              return;
+            }
+            loading.classList.add("hidden");
+          };
+          frame.src = loginUrl;
+        } catch (error) {
+          showError(error.message);
+          scheduleRetry();
+        }
+      }
+
+      retryBtn.addEventListener("click", () => start(true));
+      start();
+    </script>
+  </body>
+</html>
